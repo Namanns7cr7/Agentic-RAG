@@ -1,0 +1,10 @@
+faiss-cpu
+numpy
+sentence-transformers
+transformers
+torch
+fastapi
+uvicorn
+pydantic
+pytest
+httpx
