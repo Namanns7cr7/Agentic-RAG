@@ -1,0 +1,17 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.3, pytest-9.0.2, pluggy-1.6.0
+rootdir: D:\4 year\agentic_rag
+configfile: pyproject.toml
+plugins: anyio-4.11.0
+collected 16 items
+
+tests\test_retriever.py ...............F                                 [100%]
+
+================================== FAILURES ===================================
+___________________ TestScraperTool.test_scrape_example_com ___________________
+tests\test_retriever.py:110: in test_scrape_example_com
+    assert "Domain" in res or "Example" in res
+E   AssertionError: assert ('Domain' in 'Failed to scrape http://example.com: <urlopen error [Errno 11001] getaddrinfo failed>' or 'Example' in 'Failed to scrape http://example.com: <urlopen error [Errno 11001] getaddrinfo failed>')
+=========================== short test summary info ===========================
+FAILED tests/test_retriever.py::TestScraperTool::test_scrape_example_com - As...
+======================== 1 failed, 15 passed in 11.50s ========================

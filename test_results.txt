@@ -1,0 +1,12 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.3, pytest-9.0.2, pluggy-1.6.0
+rootdir: D:\4 year\agentic_rag
+configfile: pyproject.toml
+plugins: anyio-4.11.0
+collected 33 items
+
+tests\test_agent.py ......                                               [ 18%]
+tests\test_api.py .............                                          [ 57%]
+tests\test_retriever.py ..............                                   [100%]
+
+============================= 33 passed in 48.53s =============================

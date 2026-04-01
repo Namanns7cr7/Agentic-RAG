@@ -4,7 +4,7 @@ sentence-transformers
 transformers
 torch
 fastapi
-uvicorn
-pydantic
+uvicorn[standard]
+pydantic>=2.0
 pytest
 httpx
