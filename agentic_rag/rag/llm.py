@@ -4,6 +4,8 @@ from .utils_logger import get_logger
 
 logger = get_logger(__name__)
 
+SAFE_LLM_ERROR = "The AI model is temporarily unavailable. Please try again later."
+
 
 class LocalGenerator:
     def __init__(self, model_name: str):
@@ -27,7 +29,7 @@ class LocalGenerator:
 
     def generate(self, prompt: str, max_new_tokens: int = 128, temperature: float = 0.7) -> str:
         if not self._available:
-            return f"[Generator unavailable] Prompt was: {prompt[:200]}"
+            return SAFE_LLM_ERROR
         try:
             kwargs = {
                 "max_new_tokens": max_new_tokens,
@@ -43,4 +45,4 @@ class LocalGenerator:
             return text.strip()
         except Exception as e:
             logger.error("Generation failed: %s", e)
-            return f"[Generation error] {e}"
+            return SAFE_LLM_ERROR

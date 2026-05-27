@@ -84,7 +84,7 @@ class TestVectorStoreFallback:
         assert store.size == 2
 
         query = embs[0:1]
-        distances, idx, retrieved = store.search(query, k=1)
+        distances, idx, retrieved, metas = store.search(query, k=1)
         assert len(retrieved[0]) >= 1
 
     def test_search_empty_store(self):
@@ -92,7 +92,7 @@ class TestVectorStoreFallback:
 
         store = VectorStore(dim=4)
         query = np.random.rand(1, 4).astype("float32")
-        distances, idx, retrieved = store.search(query, k=1)
+        distances, idx, retrieved, metas = store.search(query, k=1)
         # Should not crash
 
 

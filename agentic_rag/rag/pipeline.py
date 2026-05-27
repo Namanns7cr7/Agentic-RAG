@@ -1,6 +1,6 @@
 """High-level RAG orchestrator — wires together all components."""
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .config import Settings
 from .embeddings import Embeddings
 from .vectorstore import VectorStore
@@ -14,11 +14,19 @@ logger = get_logger(__name__)
 
 
 class Pipeline:
-    def __init__(self, settings: Settings, seed_docs: List[str]):
+    def __init__(
+        self,
+        settings: Settings,
+        seed_docs: List[str],
+        *,
+        embedder: Optional[Embeddings] = None,
+        store: Optional[VectorStore] = None,
+        generator: Optional[LocalGenerator] = None,
+    ):
         self.settings = settings
-        self.embedder = Embeddings(settings.embedding_model_name)
-        self.store = VectorStore(self.embedder.dim)
-        self.generator = LocalGenerator(settings.generator_model_name)
+        self.embedder = embedder or Embeddings(settings.embedding_model_name)
+        self.store = store or VectorStore(self.embedder.dim)
+        self.generator = generator or LocalGenerator(settings.generator_model_name)
         self.retriever = Retriever(self.embedder, self.store)
         tools = {
             "calculator": CalculatorTool(),
@@ -33,13 +41,14 @@ class Pipeline:
             max_memory=settings.max_memory_turns,
         )
         if seed_docs:
-            self.add_documents(seed_docs)
+            self.add_documents(seed_docs, doc_id="seed")
 
-    def add_documents(self, docs: List[str]) -> int:
+    def add_documents(self, docs: List[str], *, doc_id: Optional[str] = None) -> int:
         if not docs:
             return 0
         embs = self.embedder.encode(docs)
-        self.store.add(docs, embs)
+        metadatas = [{"doc_id": doc_id or ""} for _ in docs]
+        self.store.add(docs, embs, metadatas=metadatas)
         logger.info("Added %d documents. Total=%d", len(docs), self.store.size)
         return len(docs)
 

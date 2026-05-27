@@ -8,3 +8,10 @@ uvicorn[standard]
 pydantic>=2.0
 pytest
 httpx
+python-dotenv
+pymupdf
+python-docx
+python-pptx
+Pillow
+python-multipart
+google-cloud-aiplatform

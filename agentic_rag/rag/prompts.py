@@ -1,10 +1,13 @@
 """Prompt templates for the Agentic RAG pipeline."""
 
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 
-def rag_prompt(contexts: List[str], question: str, memory: List[Tuple[str, str]] | None = None) -> str:
-    context = "\n".join(f"- {c}" for c in contexts) if contexts else "No context available."
+def rag_prompt(contexts: List[Any], question: str, memory: List[Tuple[str, str]] | None = None) -> str:
+    if contexts and isinstance(contexts[0], dict):
+        context = "\n".join(f"- {c.get('text', '')}" for c in contexts)
+    else:
+        context = "\n".join(f"- {c}" for c in contexts) if contexts else "No context available."
     mem_block = ""
     if memory:
         lines = []

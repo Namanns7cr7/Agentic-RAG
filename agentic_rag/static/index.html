@@ -823,6 +823,40 @@
             box-shadow: 0 6px 16px rgba(99,102,241,0.4);
         }
 
+        /* ── Upload Zone ──────────────────────────────── */
+        .upload-zone {
+            border: 2px dashed rgba(255,255,255,0.15);
+            border-radius: 16px;
+            padding: 40px 20px;
+            text-align: center;
+            background: rgba(0,0,0,0.2);
+            transition: var(--transition);
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(99,102,241,0.05);
+        }
+        .upload-zone i {
+            font-size: 32px;
+            font-style: normal;
+            color: var(--accent-light);
+            margin-bottom: 12px;
+            display: block;
+        }
+        .upload-zone p {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .upload-zone span {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        #fileInput { display: none; }
+
         /* ── Toast ────────────────────────────────────── */
         .toast {
             position: fixed;
@@ -915,7 +949,8 @@
         </div>
 
         <div class="sidebar-actions">
-            <button class="btn" id="btnLoadDocs" onclick="openModal()">📄 Load Documents</button>
+            <button class="btn" id="btnLoadDocs" onclick="openModal()">📄 Load Text</button>
+            <button class="btn" id="btnUploadDoc" onclick="openUploadModal()">📁 Upload File</button>
             <button class="btn btn-danger" id="btnClearMemory" onclick="clearMemory()">🗑️ Clear Memory</button>
         </div>
     </aside>
@@ -973,6 +1008,32 @@
         <div class="modal-footer">
             <button class="btn btn-cancel" onclick="closeModal()">Cancel</button>
             <button class="btn btn-submit" id="btnSubmitDocs" onclick="loadDocuments()">Inject Knowledge</button>
+        </div>
+    </div>
+</div>
+
+<!-- Premium Upload Document Modal -->
+<div class="modal-overlay" id="uploadModalOverlay" onclick="closeUploadModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3><i>📁</i> Upload Document</h3>
+            <button class="modal-close" onclick="closeUploadModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-desc">Upload a PDF, DOCX, TXT, or Image to extract text and add it to the AI's knowledge base.</p>
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <i>☁️</i>
+                <p>Click to browse or drag file here</p>
+                <span>Supports PDF, DOCX, TXT, PNG, JPG, PPTX, CSV</span>
+                <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.pptx,.csv" onchange="handleFileSelect(event)">
+            </div>
+            <div id="filePreview" style="display:none; text-align:center; font-size:13px; color:var(--text-primary); margin-bottom:16px;">
+                <span id="fileName"></span> <button onclick="clearFile()" style="background:none;border:none;color:var(--red);cursor:pointer;margin-left:8px;">✕</button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-cancel" onclick="closeUploadModal()">Cancel</button>
+            <button class="btn btn-submit" id="btnSubmitFile" onclick="uploadDocument()" disabled style="opacity:0.5;">Upload & Process</button>
         </div>
     </div>
 </div>
@@ -1191,6 +1252,91 @@
         } finally {
             submitBtn.textContent = ogText;
             submitBtn.disabled = false;
+        }
+    }
+
+    // ── File Upload ──────────────────────────────────
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const btnSubmitFile = document.getElementById('btnSubmitFile');
+    let selectedFile = null;
+
+    function openUploadModal() {
+        document.getElementById('uploadModalOverlay').classList.add('active');
+    }
+
+    function closeUploadModal(e) {
+        if (e && e.target !== document.getElementById('uploadModalOverlay')) return;
+        document.getElementById('uploadModalOverlay').classList.remove('active');
+        clearFile();
+    }
+
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('dragover');
+    });
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('dragover');
+    });
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            handleFileSelect({ target: fileInput });
+        }
+    });
+
+    function handleFileSelect(e) {
+        if (e.target.files.length > 0) {
+            selectedFile = e.target.files[0];
+            document.getElementById('fileName').textContent = selectedFile.name;
+            document.getElementById('filePreview').style.display = 'block';
+            uploadZone.style.display = 'none';
+            btnSubmitFile.disabled = false;
+            btnSubmitFile.style.opacity = '1';
+        }
+    }
+
+    function clearFile() {
+        selectedFile = null;
+        fileInput.value = '';
+        document.getElementById('filePreview').style.display = 'none';
+        uploadZone.style.display = 'block';
+        btnSubmitFile.disabled = true;
+        btnSubmitFile.style.opacity = '0.5';
+    }
+
+    async function uploadDocument() {
+        if (!selectedFile) return;
+
+        const ogText = btnSubmitFile.textContent;
+        btnSubmitFile.textContent = 'Uploading & Extracting...';
+        btnSubmitFile.disabled = true;
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('chunk_strategy', 'sentence');
+        formData.append('chunk_size', '500');
+
+        try {
+            const r = await fetch(`${API}/upload-document`, {
+                method: 'POST',
+                body: formData
+            });
+            const d = await r.json();
+            if (r.ok) {
+                showToast(`✓ Uploaded! Added ${d.chunks_added_to_knowledge_base} chunks to knowledge base`, 'success');
+                closeUploadModal();
+                checkHealth();
+            } else {
+                showToast(`Failed: ${d.detail}`, 'error');
+            }
+        } catch {
+            showToast('Connection error', 'error');
+        } finally {
+            btnSubmitFile.textContent = ogText;
+            btnSubmitFile.disabled = false;
         }
     }
 

@@ -1,0 +1,20 @@
+{
+  "user_id": "test_user_eval",
+  "preferred_style": "simple",
+  "level": "beginner",
+  "current_topics": [],
+  "completed_topics": [],
+  "weak_topics": [
+    "photosynthesis"
+  ],
+  "misconception_history": [
+    "{\"answer\": \"Mock grounded answer.\", \"code_example\": \"print('mock')\", \"mini_challenge\": \"Try a small task.\", \"quick_check\": \"What did you learn?\", \"next_step\": \"Read the next section.\"}"
+  ],
+  "scores": [
+    0,
+    0,
+    0
+  ],
+  "pace": "normal",
+  "last_interaction_at": "2026-05-27T18:39:44.764012"
+}

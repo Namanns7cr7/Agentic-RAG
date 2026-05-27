@@ -3,11 +3,16 @@
 import pytest
 from agentic_rag.rag.config import Settings
 from agentic_rag.rag.pipeline import Pipeline
+from agentic_rag.rag.mock_components import MockEmbeddings, MockGenerator
+from agentic_rag.rag.vectorstore import VectorStore
 
 
 @pytest.fixture(scope="module")
 def pipe():
     """Shared pipeline instance for the test module (avoids reloading the model)."""
+    embedder = MockEmbeddings()
+    store = VectorStore(embedder.dim)
+    generator = MockGenerator()
     return Pipeline(
         Settings(),
         seed_docs=[
@@ -17,6 +22,9 @@ def pipe():
             "FAISS enables fast vector similarity search.",
             "Transformers use self-attention mechanisms.",
         ],
+        embedder=embedder,
+        store=store,
+        generator=generator,
     )
 
 

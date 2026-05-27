@@ -1,235 +1,136 @@
-# Agentic RAG
+# Production-Style Agentic RAG Platform
 
-A production-style **Agentic Retrieval-Augmented Generation** system featuring:
+## What It Does
+This project provides a document-grounded AI assistant for developer learning. It supports document upload, retrieval, doc-scoped queries, citations, grounding verification, unsupported-answer fallback, quiz generation, tests, and an evaluation harness.
 
-- 🧠 **LLM-driven planning** — the agent uses the language model to decide whether to retrieve, use tools, or act
-- 🔧 **Tool use** — Calculator (safe AST-based), Time, and Summarize tools
-- 💬 **Conversation memory** — maintains context across multiple turns
-- 🪞 **Self-reflection** — the agent reviews and corrects its own draft before responding
-- 🔍 **Vector search** — FAISS-backed similarity search with automatic NumPy fallback
-- 🚀 **FastAPI REST API** — fully documented with Swagger UI
-- ✅ **Comprehensive tests** — 25+ unit & integration tests with pytest
-- 🐳 **Docker-ready** — containerized deployment out of the box
-- ⚙️ **CI/CD** — GitHub Actions workflow for automated testing
+This project reduces hallucination risk using retrieval grounding, citations, fallback behavior, and grounding verification. It does not claim zero hallucinations.
 
-> **Architecture**: Clean modular design with proper separation of concerns — embeddings, vector store, retriever, LLM, tools, agent, and pipeline are all independent modules.
+## Architecture Overview
+1. Document ingestion and chunking
+2. Chunk metadata with `doc_id`
+3. Vector retrieval
+4. Doc-scoped retrieval (optional)
+5. Generation
+6. Grounding verification (deterministic check + reflection)
+7. Guardrails for empty or weak retrieval
+8. Quiz generation with validation
+9. Evaluation harness + CI
 
----
-
-## Architecture
-
+Text diagram:
 ```
-Plan (LLM decides action)
-  │
-  ├── retrieve → Embed query → FAISS search → Build context prompt → Generate draft
-  ├── use_tool:calculator → Safe AST eval → Generate answer from observation
-  ├── use_tool:time → Get timestamp → Generate answer from observation
-  └── use_tool:summarize → Extract bullet points → Return summary
-  │
-  ▼
-Reflect (LLM reviews and corrects the draft)
-  │
-  ▼
-Remember (store Q&A in conversation memory)
+User query
+	-> Retriever (doc_id scoped)
+	-> Top-k chunks + citations
+	-> LLM generation
+	-> Grounding verification
+	-> Answer or unsupported
 ```
 
----
+## API Contract (DocuMentor)
+The core grounded response contract for document queries:
 
-## Requirements
-- Python **3.10–3.13**
-- First run downloads model weights (~90 MB, cached thereafter)
+- `answer`: string
+- `status`: one of `answered | unsupported | error`
+- `citations`: list of source chunk references
+- `confidence`: optional float
+- `unsupported_reason`: optional string
+- `used_doc_ids`: list of document ids
+- `safety_flags`: optional list
 
----
+Rules:
+- If retrieval is empty or weak, `status` is `unsupported`.
+- Every `answered` response includes citations.
+- If grounding verification fails, the response is `unsupported`.
 
-## Quickstart
-
-### Windows (PowerShell)
-```powershell
-cd "D:\4 year\agentic_rag"
-
-# Create + activate venv
-py -3.13 -m venv .venv
-& ".\.venv\Scripts\Activate.ps1"
-
-# Install deps
-pip install -r requirements.txt
-
-# Run API
-uvicorn agentic_rag.app:app --reload --port 8000
-
-# Open Swagger UI → http://127.0.0.1:8000/docs
-```
-
-### macOS / Linux
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn agentic_rag.app:app --reload --port 8000
-# Open http://127.0.0.1:8000/docs
-```
-
-### Docker
-```bash
-docker build -t agentic-rag .
-docker run -p 8000:8000 agentic-rag
-```
-
----
-
-## API Endpoints
-
-### `GET /` — Home
-```json
-{ "message": "Agentic-RAG is running. Visit /docs for the Swagger UI." }
-```
-
-### `GET /health` — Health Check
-```json
-{ "status": "ok", "documents_loaded": 57, "model": "google/flan-t5-small" }
-```
-
-### `POST /query` — Ask a Question
-```bash
-curl -X POST http://127.0.0.1:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question":"What is RAG?","top_k":3}'
-```
-
-**Response:**
-```json
-{
-  "plan": "retrieve",
-  "draft": "...",
-  "final": "...",
-  "observation": null
-}
-```
-
-### `POST /load` — Add Documents
-```bash
-curl -X POST http://127.0.0.1:8000/load \
-  -H "Content-Type: application/json" \
-  -d '{"documents":["RAG retrieves facts before generation.","VS Code is by Microsoft."]}'
-```
-
-**Response:**
-```json
-{ "added": 2, "total": 59 }
-```
-
-### `POST /memory/clear` — Clear Conversation Memory
-```bash
-curl -X POST http://127.0.0.1:8000/memory/clear
-```
-
----
-
-## Project Layout
-```
-agentic_rag/
-  app.py                  # FastAPI REST API (/, /health, /query, /load, /memory/clear)
-  rag/
-    config.py             # Pydantic settings (models, top_k, temperature, memory)
-    embeddings.py         # SentenceTransformers wrapper
-    vectorstore.py        # FAISS index with NumPy fallback
-    retriever.py          # Top-k document retrieval
-    prompts.py            # Prompt templates (RAG, reflection, planner)
-    llm.py                # HF pipeline wrapper with graceful fallback
-    tools.py              # Safe tools (Calculator, Time, Summarize)
-    agent.py              # Agent loop (Plan → Act → Reflect → Remember)
-    pipeline.py           # High-level RAG orchestrator
-    utils_logger.py       # Logging helper
-  data/
-    seed_documents.json   # 57-document seed corpus
-tests/
-  test_api.py             # API endpoint tests (13 tests)
-  test_agent.py           # Agent & pipeline tests (6 tests)
-  test_retriever.py       # Tool & component unit tests (13 tests)
-Dockerfile                # Container deployment
-.github/workflows/ci.yml  # GitHub Actions CI
-requirements.txt
-README.md
-```
-
----
-
-## Key Features in Detail
-
-### LLM-Driven Planning
-Instead of simple keyword matching, the agent asks the language model to decide the best action. A fast-path heuristic handles obvious cases (math expressions → calculator), while ambiguous queries are routed through the LLM planner.
-
-### Conversation Memory
-The agent remembers the last N question-answer pairs (configurable via `max_memory_turns`) and includes them in the prompt context. This enables multi-turn conversations.
-
-### Safe Calculator
-Uses Python's `ast` module for expression parsing — no `eval()`. Only arithmetic operators are supported, preventing code injection.
-
-### Self-Reflection
-After generating a draft answer, the agent runs a reflection step that checks for hallucinations and unsupported claims, producing a refined final answer.
-
-### FAISS + NumPy Fallback
-If FAISS isn't installed, the vector store automatically falls back to a pure-NumPy brute-force search — no code changes needed.
-
----
-
-## Configuration
-Edit defaults in `rag/config.py`:
-```python
-embedding_model_name = "all-MiniLM-L6-v2"
-generator_model_name = "google/flan-t5-small"
-top_k_default = 3
-max_new_tokens = 128
-temperature = 0.7
-max_memory_turns = 5
-```
-
----
+## Key Endpoints
+- `POST /upload-document`
+- `POST /docs/ask`
+- `POST /docs/quiz`
+- `POST /docs/challenge`
+- `POST /docs/cheatsheet`
+- `POST /docs/debug`
+- `POST /docs/interview`
 
 ## Testing
-```bash
-pip install pytest httpx
-pytest -v
-```
+Test coverage includes:
+- Unit tests
+- API tests
+- Retrieval tests
+- Grounding verifier tests
+- Guardrail tests
+- Quiz validation tests
+- LLM failure tests
+- Mock-mode tests
 
-Expected: **25+ tests passing**, covering API endpoints, agent behavior, tools, and vector store.
-
----
-
-## Troubleshooting
-
-**`ModuleNotFoundError: sentence_transformers`**
+Run tests:
 ```powershell
-pip install sentence-transformers transformers torch
+python -m pytest -q
 ```
 
-**FAISS install fails**
-Not required — the code falls back to NumPy automatically:
+To run in mock mode (no model downloads):
 ```powershell
-pip uninstall -y faiss-cpu
+$env:RAG_MOCK_MODE="true"
+python -m pytest -q
 ```
 
-**PowerShell "running scripts is disabled"**
+## Vertex AI Setup
+This project supports an optional Vertex AI provider for Gemini and Vertex embeddings.
+
+Environment variables:
+- `RAG_PROVIDER=vertex`
+- `GOOGLE_CLOUD_PROJECT=<your-project>`
+- `GOOGLE_CLOUD_LOCATION=us-central1`
+- `VERTEX_GEMINI_MODEL=gemini-1.5-flash`
+- `VERTEX_EMBEDDING_MODEL=text-embedding-004`
+
+Run with Vertex AI:
 ```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
-& ".\.venv\Scripts\Activate.ps1"
+$env:RAG_PROVIDER="vertex"
+$env:GOOGLE_CLOUD_PROJECT="your-project"
+$env:GOOGLE_CLOUD_LOCATION="us-central1"
+$env:VERTEX_GEMINI_MODEL="gemini-1.5-flash"
+$env:VERTEX_EMBEDDING_MODEL="text-embedding-004"
+uvicorn agentic_rag.app:app --reload
 ```
 
----
+Cost warning: Vertex AI usage incurs cost. Use budgets and alerts.
 
-## Tech Stack
-| Component | Technology |
-|---|---|
-| Embeddings | `all-MiniLM-L6-v2` (SentenceTransformers) |
-| Vector Store | FAISS / NumPy fallback |
-| Generator | `google/flan-t5-small` (HuggingFace) |
-| API | FastAPI + Pydantic v2 |
-| Server | Uvicorn (ASGI) |
-| Tests | pytest + httpx |
-| CI/CD | GitHub Actions |
-| Container | Docker |
+## Evaluation Harness
+The evaluation harness runs a set of doc-grounding cases and writes results to `evaluation/results.json`.
 
----
+Run:
+```powershell
+python evaluation/evaluator.py
+```
 
-## License
-MIT
+Optional Vertex evaluation (requires credentials):
+```powershell
+python evaluation/vertex_eval.py
+```
+
+Metrics reported:
+- status accuracy
+- citation accuracy
+- forbidden keyword failures
+- safety pass rate
+- doc scope pass rate
+- quiz validity rate
+
+## Interview Talking Points
+How I would explain this project in an interview:
+- Simple RAG is not enough; empty retrieval must refuse to answer.
+- Doc scoping prevents mixing conflicting sources.
+- Citations reduce hallucination risk and improve auditability.
+- Grounding verification adds a deterministic safety layer.
+- Prompt-injection attempts are detected and refused.
+- CI ensures the project runs in mock mode without external services.
+- Next improvements: better semantic grounding, richer citations, and dynamic scoring.
+
+## Local Setup
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+uvicorn agentic_rag.app:app --reload
+```
