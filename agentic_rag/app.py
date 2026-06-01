@@ -70,6 +70,37 @@ class HealthOut(BaseModel):
     model: str
 
 
+class UploadDocumentResponse(BaseModel):
+    doc_id: str
+    filename: str
+    total_characters: int
+    total_chunks: int
+    status: str
+
+
+class AskCitation(BaseModel):
+    doc_id: str
+    filename: str
+    chunk_id: str
+    page_number: Optional[int] = None
+    snippet: str
+
+
+class AskResponse(BaseModel):
+    answer: str
+    status: str
+    citations: List[AskCitation]
+    retrieved_chunks_count: int
+    provider: str
+    model: str
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=2, description="The learning or documentation question")
+    doc_id: Optional[str] = Field(default=None, description="Optional document ID scoping")
+    mode: str = Field(default="qa", description="Workflow mode: qa, teach, quiz, or interview")
+
+
 # ── App Setup ─────────────────────────────────────────────────────
 
 def load_seed() -> list:
@@ -85,6 +116,10 @@ def _is_mock_mode() -> bool:
     )
 
 
+from .rag.utils_logger import get_logger
+logger = get_logger(__name__)
+
+
 class ServiceContainer:
     def __init__(self, mock_mode: bool):
         self.mock_mode = mock_mode
@@ -94,6 +129,8 @@ class ServiceContainer:
         self._learning_memory: Optional[LearningMemory] = None
         self._learning_agent: Optional[LearningAgent] = None
         self._doc_agent: Optional[DocLearningAgent] = None
+        self._doc_store: Optional[object] = None
+        self._agent_pipeline: Optional[object] = None
 
     def settings(self) -> Settings:
         if self._settings is None:
@@ -115,7 +152,20 @@ class ServiceContainer:
                     generator=generator,
                 )
             else:
-                self._pipe = Pipeline(settings, seed_docs=load_seed())
+                self._pipe = Pipeline(settings, seed_docs=[])
+                # Load saved FAISS index if it exists
+                faiss_path = os.path.join("data", "index", "faiss.index")
+                if os.path.exists(faiss_path):
+                    try:
+                        self._pipe.store.load(faiss_path)
+                        logger.info("Loaded persisted FAISS index from %s", faiss_path)
+                    except Exception as e:
+                        logger.error("Failed to load persisted FAISS index: %s", e)
+                
+                # If the index is empty, add the seed docs
+                if self._pipe.store.size == 0:
+                    logger.info("Vector index is empty. Ingesting seed documents.")
+                    self._pipe.add_documents(load_seed(), doc_id="seed")
         return self._pipe
 
     def llm_provider(self):
@@ -147,6 +197,18 @@ class ServiceContainer:
                 retriever=pipe.retriever,
             )
         return self._doc_agent
+
+    def doc_store(self):
+        if self._doc_store is None:
+            from .rag.document_store import DocumentStore
+            self._doc_store = DocumentStore()
+        return self._doc_store
+
+    def agent_pipeline(self):
+        if self._agent_pipeline is None:
+            from .rag.agent_pipeline import MultiAgentPipeline
+            self._agent_pipeline = MultiAgentPipeline(self.pipeline().retriever, self.llm_provider())
+        return self._agent_pipeline
 
 
 _services = ServiceContainer(mock_mode=_is_mock_mode())
@@ -433,13 +495,90 @@ async def upload_multiple_documents(
     return results
 
 
-@app.get("/documents", response_model=DocumentListResponse, tags=["documents"])
+@app.get("/documents", tags=["documents"])
 def list_documents():
     """List all uploaded documents and their metadata."""
-    return DocumentListResponse(
-        total_documents=len(_uploaded_documents),
-        documents=[DocumentInfo(**d) for d in _uploaded_documents],
-    )
+    store = _services.doc_store()
+    docs = store.list_documents()
+    mapped = []
+    for d in docs:
+        ext = os.path.splitext(d["filename"])[1].lower()
+        try:
+            up_time = datetime.fromtimestamp(d["uploaded_at"]).isoformat()
+        except Exception:
+            up_time = datetime.utcnow().isoformat()
+        
+        mapped.append({
+            "doc_id": d["doc_id"],
+            "filename": d["filename"],
+            "file_type": ext,
+            "total_chars": d["total_characters"],
+            "num_chunks": d["total_chunks"],
+            "uploaded_at": up_time
+        })
+    return {
+        "total_documents": len(mapped),
+        "documents": mapped
+    }
+
+
+@app.post("/documents/upload", response_model=UploadDocumentResponse, tags=["documents"])
+async def upload_document_endpoint(
+    file: UploadFile = File(..., description="Document to upload (.pdf, .txt, .md, .docx)"),
+    chunk_size: int = Form(default=1000, ge=100, le=5000, description="Chunk size in characters"),
+):
+    """Upload a document, calculate file hash for deduplication, extract text, 
+    generate chunks with overlap, and add to FAISS/persist locally.
+    """
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".pdf", ".txt", ".md", ".docx"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Supported: .pdf, .txt, .md, .docx"
+        )
+    try:
+        file_bytes = await file.read()
+        store = _services.doc_store()
+        pipe = _services.pipeline()
+        
+        res = store.add_document(
+            filename=file.filename or "unknown",
+            file_bytes=file_bytes,
+            pipeline=pipe,
+            chunk_size=chunk_size,
+        )
+        return UploadDocumentResponse(**res)
+    except Exception as e:
+        logger.error("Failed to upload document: %s", e)
+        raise HTTPException(status_code=500, detail=f"Document upload failed: {e}")
+
+
+@app.post("/documents/ask", response_model=AskResponse, tags=["documents"])
+def ask_document_endpoint(payload: AskRequest):
+    """Query the multi-agent pipeline scoped to a specific document or global index."""
+    try:
+        pipeline = _services.agent_pipeline()
+        res = pipeline.ask(
+            question=payload.question,
+            doc_id=payload.doc_id,
+            mode=payload.mode,
+            top_k=5,
+        )
+        return AskResponse(**res)
+    except Exception as e:
+        logger.error("Failed to answer via agent pipeline: %s", e)
+        raise HTTPException(status_code=500, detail=f"Agent workflow failed: {e}")
+
+
+@app.delete("/documents/{doc_id}", tags=["documents"])
+def delete_document_endpoint(doc_id: str):
+    """Delete a document and all its chunks from local storage and vector store."""
+    store = _services.doc_store()
+    pipe = _services.pipeline()
+    success = store.delete_document(doc_id, pipe)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Document with ID {doc_id} not found.")
+    return {"status": "deleted", "doc_id": doc_id}
 
 
 @app.post("/upload-and-learn", response_model=LearnResponse, tags=["documents"])

@@ -48,7 +48,8 @@ class MockLLMProvider(LLMProvider):
         doc_line = ""
         if "Retrieved docs:" in prompt:
             for line in prompt.splitlines():
-                if line.strip().startswith("[") or line.strip().startswith("-"):
+                stripped = line.strip()
+                if stripped.startswith("[") or (stripped.startswith("-") and not stripped.startswith("---")):
                     doc_line = line
                     break
         if doc_line:

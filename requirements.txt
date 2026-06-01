@@ -14,4 +14,4 @@ python-docx
 python-pptx
 Pillow
 python-multipart
-google-cloud-aiplatform
+google-cloud-aiplatform>=1.60.0

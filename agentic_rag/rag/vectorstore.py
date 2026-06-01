@@ -78,6 +78,46 @@ try:
         def size(self) -> int:
             return len(self.docs)
 
+        def save(self, path: str) -> None:
+            import os
+            import json
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            faiss.write_index(self.index, path)
+            np.save(path + ".npy", self.embeddings)
+            with open(path + ".json", "w", encoding="utf-8") as f:
+                json.dump({"docs": self.docs, "metas": self.metas}, f, ensure_ascii=False)
+
+        def load(self, path: str) -> None:
+            import os
+            import json
+            if os.path.exists(path):
+                self.index = faiss.read_index(path)
+                if os.path.exists(path + ".npy"):
+                    self.embeddings = np.load(path + ".npy")
+                if os.path.exists(path + ".json"):
+                    with open(path + ".json", "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        self.docs = data.get("docs", [])
+                        self.metas = data.get("metas", [])
+
+        def remove_doc(self, doc_id: str) -> None:
+            indices_to_keep = [i for i, m in enumerate(self.metas) if m.get("doc_id") != doc_id]
+            if len(indices_to_keep) == len(self.docs):
+                return
+            if indices_to_keep:
+                self.embeddings = self.embeddings[indices_to_keep]
+                self.docs = [self.docs[i] for i in indices_to_keep]
+                self.metas = [self.metas[i] for i in indices_to_keep]
+                
+                dim = self.embeddings.shape[1]
+                self.index = faiss.IndexFlatL2(dim)
+                self.index.add(self.embeddings)
+            else:
+                dim = self.index.d
+                self.embeddings = np.empty((0, dim), dtype="float32")
+                self.docs = []
+                self.metas = []
+
 except ImportError:
     # NumPy brute-force fallback when FAISS is not available
     class VectorStore:  # type: ignore[no-redef]
@@ -156,3 +196,35 @@ except ImportError:
         @property
         def size(self) -> int:
             return len(self.docs)
+
+        def save(self, path: str) -> None:
+            import os
+            import json
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            np.save(path + ".npy", self.embeddings)
+            with open(path + ".json", "w", encoding="utf-8") as f:
+                json.dump({"docs": self.docs, "metas": self.metas}, f, ensure_ascii=False)
+
+        def load(self, path: str) -> None:
+            import os
+            import json
+            if os.path.exists(path + ".npy"):
+                self.embeddings = np.load(path + ".npy")
+            if os.path.exists(path + ".json"):
+                with open(path + ".json", "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.docs = data.get("docs", [])
+                    self.metas = data.get("metas", [])
+
+        def remove_doc(self, doc_id: str) -> None:
+            indices_to_keep = [i for i, m in enumerate(self.metas) if m.get("doc_id") != doc_id]
+            if len(indices_to_keep) == len(self.docs):
+                return
+            if indices_to_keep:
+                self.embeddings = self.embeddings[indices_to_keep]
+                self.docs = [self.docs[i] for i in indices_to_keep]
+                self.metas = [self.metas[i] for i in indices_to_keep]
+            else:
+                self.embeddings = np.empty((0, self.dim), dtype="float32")
+                self.docs = []
+                self.metas = []
