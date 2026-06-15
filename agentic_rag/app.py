@@ -2,7 +2,7 @@
 
 from datetime import datetime
 import os
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +40,15 @@ from uuid import uuid4
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# ── Simple API Key Auth Dependency ──────────────────────────────
+from fastapi import Header
+
+def get_api_key(x_api_key: str = Header(..., description="API Key for authentication")):
+    # In production, validate against secure storage or env
+    API_KEY = os.getenv("AGENTIC_RAG_API_KEY", "changeme")
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API Key.")
+    return x_api_key
 
 # ── Request / Response Models (original RAG) ─────────────────────
 
@@ -47,28 +56,23 @@ class QueryIn(BaseModel):
     question: str = Field(..., min_length=2, description="The question to ask")
     top_k: Optional[int] = Field(default=None, ge=1, le=20, description="Number of documents to retrieve")
 
-
 class QueryOut(BaseModel):
     plan: str
     draft: str
     final: str
     observation: Optional[str] = None
 
-
 class LoadIn(BaseModel):
     documents: List[str] = Field(..., min_length=1, description="Documents to add to the knowledge base")
-
 
 class LoadOut(BaseModel):
     added: int
     total: int
 
-
 class HealthOut(BaseModel):
     status: str
     documents_loaded: int
     model: str
-
 
 class UploadDocumentResponse(BaseModel):
     doc_id: str
@@ -77,14 +81,12 @@ class UploadDocumentResponse(BaseModel):
     total_chunks: int
     status: str
 
-
 class AskCitation(BaseModel):
     doc_id: str
     filename: str
     chunk_id: str
     page_number: Optional[int] = None
     snippet: str
-
 
 class AskResponse(BaseModel):
     answer: str
@@ -94,19 +96,16 @@ class AskResponse(BaseModel):
     provider: str
     model: str
 
-
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=2, description="The learning or documentation question")
     doc_id: Optional[str] = Field(default=None, description="Optional document ID scoping")
     mode: str = Field(default="qa", description="Workflow mode: qa, teach, quiz, or interview")
-
 
 # ── App Setup ─────────────────────────────────────────────────────
 
 def load_seed() -> list:
     path = Path(__file__).parent / "data" / "seed_documents.json"
     return json.loads(path.read_text(encoding="utf-8"))
-
 
 def _is_mock_mode() -> bool:
     return os.getenv("RAG_MOCK_MODE", "").lower() in ("1", "true", "yes") or os.getenv("TESTING", "").lower() in (
@@ -115,10 +114,8 @@ def _is_mock_mode() -> bool:
         "yes",
     )
 
-
 from .rag.utils_logger import get_logger
 logger = get_logger(__name__)
-
 
 class ServiceContainer:
     def __init__(self, mock_mode: bool):
@@ -210,9 +207,7 @@ class ServiceContainer:
             self._agent_pipeline = MultiAgentPipeline(self.pipeline().retriever, self.llm_provider())
         return self._agent_pipeline
 
-
 _services = ServiceContainer(mock_mode=_is_mock_mode())
-
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -235,16 +230,13 @@ def create_app() -> FastAPI:
 
     return app
 
-
 app = create_app()
-
 
 # ── Original RAG Endpoints ───────────────────────────────────────
 
 @app.get("/", tags=["info"], include_in_schema=False)
 def home():
     return FileResponse(STATIC_DIR / "index.html")
-
 
 @app.get("/health", response_model=HealthOut, tags=["info"])
 def health():
@@ -256,7 +248,6 @@ def health():
         model=settings.generator_model_name,
     )
 
-
 @app.post("/query", response_model=QueryOut, tags=["rag"])
 def query(payload: QueryIn):
     try:
@@ -264,7 +255,6 @@ def query(payload: QueryIn):
         return QueryOut(**out)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to answer: {e}")
-
 
 @app.post("/load", response_model=LoadOut, tags=["rag"])
 def load(payload: LoadIn):
@@ -275,12 +265,10 @@ def load(payload: LoadIn):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to load docs: {e}")
 
-
 @app.post("/memory/clear", tags=["memory"])
 def clear_memory():
     _services.pipeline().clear_memory()
     return {"status": "memory cleared"}
-
 
 # ── LearnMate AI Learning Endpoints ──────────────────────────────
 
@@ -300,7 +288,6 @@ def learn_endpoint(payload: LearnRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Learning failed: {e}")
 
-
 @app.post("/evaluate", response_model=EvaluateResponse, tags=["learning"])
 def evaluate_endpoint(payload: EvaluateRequest):
     """Evaluate a learner's answer and provide adaptive feedback."""
@@ -315,7 +302,6 @@ def evaluate_endpoint(payload: EvaluateRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {e}")
 
-
 @app.get("/profile/{user_id}", response_model=LearnerProfileResponse, tags=["learning"])
 def profile_endpoint(user_id: str):
     """Return the learner profile."""
@@ -324,7 +310,6 @@ def profile_endpoint(user_id: str):
         return LearnerProfileResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Profile retrieval failed: {e}")
-
 
 @app.post("/flashcards", response_model=FlashcardResponse, tags=["learning"])
 def flashcards_endpoint(payload: FlashcardRequest):
@@ -340,7 +325,6 @@ def flashcards_endpoint(payload: FlashcardRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Flashcard generation failed: {e}")
 
-
 @app.post("/learning-path", response_model=LearningPathResponse, tags=["learning"])
 def learning_path_endpoint(payload: LearningPathRequest):
     """Generate a structured learning path for a topic."""
@@ -353,7 +337,6 @@ def learning_path_endpoint(payload: LearningPathRequest):
         return LearningPathResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Learning path generation failed: {e}")
-
 
 @app.post("/teach-from-docs", response_model=LearnResponse, tags=["learning"])
 def teach_from_docs_endpoint(payload: TeachFromDocsRequest):
@@ -379,12 +362,10 @@ def teach_from_docs_endpoint(payload: TeachFromDocsRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Teach from docs failed: {e}")
 
-
 # ── Document Upload Endpoints ────────────────────────────────────
 
 # In-memory document registry (tracks uploaded files)
 _uploaded_documents: List[dict] = []
-
 
 @app.post("/upload-document", response_model=DocumentUploadResponse, tags=["documents"])
 async def upload_document(
@@ -435,7 +416,6 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Document upload failed: {e}")
-
 
 @app.post("/upload-documents", response_model=List[DocumentUploadResponse], tags=["documents"])
 async def upload_multiple_documents(
@@ -494,7 +474,6 @@ async def upload_multiple_documents(
 
     return results
 
-
 @app.get("/documents", tags=["documents"])
 def list_documents():
     """List all uploaded documents and their metadata."""
@@ -520,7 +499,6 @@ def list_documents():
         "total_documents": len(mapped),
         "documents": mapped
     }
-
 
 @app.post("/documents/upload", response_model=UploadDocumentResponse, tags=["documents"])
 async def upload_document_endpoint(
@@ -552,7 +530,6 @@ async def upload_document_endpoint(
         logger.error("Failed to upload document: %s", e)
         raise HTTPException(status_code=500, detail=f"Document upload failed: {e}")
 
-
 @app.post("/documents/ask", response_model=AskResponse, tags=["documents"])
 def ask_document_endpoint(payload: AskRequest):
     """Query the multi-agent pipeline scoped to a specific document or global index."""
@@ -569,7 +546,6 @@ def ask_document_endpoint(payload: AskRequest):
         logger.error("Failed to answer via agent pipeline: %s", e)
         raise HTTPException(status_code=500, detail=f"Agent workflow failed: {e}")
 
-
 @app.delete("/documents/{doc_id}", tags=["documents"])
 def delete_document_endpoint(doc_id: str):
     """Delete a document and all its chunks from local storage and vector store."""
@@ -579,7 +555,6 @@ def delete_document_endpoint(doc_id: str):
     if not success:
         raise HTTPException(status_code=404, detail=f"Document with ID {doc_id} not found.")
     return {"status": "deleted", "doc_id": doc_id}
-
 
 @app.post("/upload-and-learn", response_model=LearnResponse, tags=["documents"])
 async def upload_and_learn(
@@ -640,11 +615,10 @@ async def upload_and_learn(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload and learn failed: {e}")
 
-
 # ── DocuMentor AI Endpoints (/docs/*) ────────────────────────────
 
 @app.post("/docs/ask", response_model=DocAskResponse, tags=["documenter"])
-def docs_ask(payload: DocAskRequest):
+def docs_ask(payload: DocAskRequest, api_key: str = Depends(get_api_key)):
     """Ask a learning question about uploaded coding documentation."""
     try:
         result = _services.doc_agent().ask(
@@ -661,9 +635,8 @@ def docs_ask(payload: DocAskRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DocAsk failed: {e}")
 
-
 @app.post("/docs/challenge", response_model=DocChallengeResponse, tags=["documenter"])
-def docs_challenge(payload: DocChallengeRequest):
+def docs_challenge(payload: DocChallengeRequest, api_key: str = Depends(get_api_key)):
     """Generate a coding challenge grounded in uploaded docs."""
     try:
         result = _services.doc_agent().generate_challenge(
@@ -677,9 +650,8 @@ def docs_challenge(payload: DocChallengeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Challenge generation failed: {e}")
 
-
 @app.post("/docs/quiz", response_model=DocQuizResponse, tags=["documenter"])
-def docs_quiz(payload: DocQuizRequest):
+def docs_quiz(payload: DocQuizRequest, api_key: str = Depends(get_api_key)):
     """Generate quiz questions grounded in uploaded docs."""
     try:
         result = _services.doc_agent().generate_quiz(
@@ -693,9 +665,8 @@ def docs_quiz(payload: DocQuizRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Quiz generation failed: {e}")
 
-
 @app.post("/docs/cheatsheet", response_model=DocCheatsheetResponse, tags=["documenter"])
-def docs_cheatsheet(payload: DocCheatsheetRequest):
+def docs_cheatsheet(payload: DocCheatsheetRequest, api_key: str = Depends(get_api_key)):
     """Generate a cheat sheet from uploaded documentation."""
     try:
         result = _services.doc_agent().generate_cheatsheet(
@@ -707,9 +678,8 @@ def docs_cheatsheet(payload: DocCheatsheetRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cheatsheet generation failed: {e}")
 
-
 @app.post("/docs/debug", response_model=DocDebugResponse, tags=["documenter"])
-def docs_debug(payload: DocDebugRequest):
+def docs_debug(payload: DocDebugRequest, api_key: str = Depends(get_api_key)):
     """Debug code using uploaded documentation as grounding context."""
     try:
         result = _services.doc_agent().debug_code(
@@ -723,9 +693,8 @@ def docs_debug(payload: DocDebugRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Debug failed: {e}")
 
-
 @app.post("/docs/interview", response_model=DocInterviewResponse, tags=["documenter"])
-def docs_interview(payload: DocInterviewRequest):
+def docs_interview(payload: DocInterviewRequest, api_key: str = Depends(get_api_key)):
     """Generate interview-style questions from uploaded docs."""
     try:
         result = _services.doc_agent().generate_interview(
