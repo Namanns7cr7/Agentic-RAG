@@ -15,7 +15,7 @@ class TestDocsAskEndpoint:
         r = client.post("/docs/ask", json={
             "user_id": "test_dev",
             "question": "explain FastAPI dependency injection",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
         data = r.json()
         assert "mode" in data
@@ -32,21 +32,21 @@ class TestDocsAskEndpoint:
             "user_id": "test_dev",
             "question": "show me a code example",
             "mode": "code_example",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
 
     def test_missing_user_id(self, client):
         r = client.post("/docs/ask", json={
             "user_id": "",
             "question": "explain async",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 422
 
     def test_missing_question(self, client):
         r = client.post("/docs/ask", json={
             "user_id": "dev1",
             "question": "",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 422
 
 
@@ -55,7 +55,7 @@ class TestDocsChallengeEndpoint:
         r = client.post("/docs/challenge", json={
             "user_id": "test_dev",
             "topic": "async functions",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
         data = r.json()
         assert "challenge_title" in data
@@ -70,7 +70,7 @@ class TestDocsQuizEndpoint:
         r = client.post("/docs/quiz", json={
             "user_id": "test_dev",
             "topic": "FastAPI routing",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
         data = r.json()
         assert "questions" in data
@@ -83,7 +83,7 @@ class TestDocsCheatsheetEndpoint:
         r = client.post("/docs/cheatsheet", json={
             "user_id": "test_dev",
             "topic": "pydantic models",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
         data = r.json()
         assert "title" in data
@@ -93,7 +93,7 @@ class TestDocsCheatsheetEndpoint:
     def test_cheatsheet_no_topic(self, client):
         r = client.post("/docs/cheatsheet", json={
             "user_id": "test_dev",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
 
 
@@ -103,7 +103,7 @@ class TestDocsDebugEndpoint:
             "user_id": "test_dev",
             "code": "def foo():\n    return bar",
             "error_message": "NameError: name 'bar' is not defined",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
         data = r.json()
         assert "issue_found" in data
@@ -116,9 +116,10 @@ class TestDocsInterviewEndpoint:
         r = client.post("/docs/interview", json={
             "user_id": "test_dev",
             "topic": "REST API design",
-        })
+        }, headers={"Authorization": "Bearer testtoken"})
         assert r.status_code == 200
         data = r.json()
         assert "questions" in data
         assert isinstance(data["questions"], list)
         assert "status" in data
+
