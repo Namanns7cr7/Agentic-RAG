@@ -28,6 +28,7 @@ def test_doc_id_scoping_conflicting_docs():
     r_a = client.post(
         "/docs/ask",
         json={"user_id": "u1", "question": "What is the refund period?", "doc_id": doc_a},
+        headers={"Authorization": "Bearer testtoken"}
     )
     assert r_a.status_code == 200
     data_a = r_a.json()
@@ -37,6 +38,7 @@ def test_doc_id_scoping_conflicting_docs():
     r_b = client.post(
         "/docs/ask",
         json={"user_id": "u1", "question": "What is the refund period?", "doc_id": doc_b},
+        headers={"Authorization": "Bearer testtoken"}
     )
     assert r_b.status_code == 200
     data_b = r_b.json()
@@ -48,6 +50,7 @@ def test_doc_id_not_found_is_unsupported():
     r = client.post(
         "/docs/ask",
         json={"user_id": "u1", "question": "What is the refund period?", "doc_id": "missing"},
+        headers={"Authorization": "Bearer testtoken"}
     )
     assert r.status_code == 200
     data = r.json()
@@ -59,6 +62,7 @@ def test_quiz_validity_and_count():
     r = client.post(
         "/docs/quiz",
         json={"user_id": "u1", "topic": "RAG", "num_questions": 3},
+        headers={"Authorization": "Bearer testtoken"}
     )
     assert r.status_code == 200
     data = r.json()
@@ -145,3 +149,4 @@ def test_grounding_verifier_blocks_ungrounded_answer():
     )
     assert res["status"] == "unsupported"
     assert "unsupported" in (res.get("unsupported_reason") or "").lower()
+
