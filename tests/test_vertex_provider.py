@@ -1,4 +1,4 @@
-"""Tests for Vertex AI provider implementations  fully mocked, CI-safe.
+"""Tests for Vertex AI provider implementations  fully mocked, CI-safe.
 
 These tests exercise:
   - VertexGeminiProvider construction and chat()
@@ -18,7 +18,7 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# Helpers  build minimal mock of the vertexai SDK so we never hit GCP
+# Helpers  build minimal mock of the vertexai SDK so we never hit GCP
 # ---------------------------------------------------------------------------
 
 def _make_vertexai_mock() -> types.ModuleType:
@@ -228,7 +228,7 @@ class TestVertexEmbeddingProvider:
             location="us-central1",
         )
         result = prov.embed_documents(["Hello world", "Python is great"])
-        # The mock returns 1 embedding per call  we accept flexible return here
+        # The mock returns 1 embedding per call  we accept flexible return here
         assert isinstance(result, list)
         assert all(isinstance(v, list) for v in result)
 
@@ -283,7 +283,7 @@ class TestLLMProviderFactory:
             assert isinstance(prov, VertexGeminiProvider)
             assert prov.model == "gemini-2.5-flash"
 
-    def test_factory_vertex_default_model_is_2_5_flash(self):
+    def test_factory_vertex_default_model_is_2_0_flash(self):
         env = {
             "RAG_MOCK_MODE": "false",
             "RAG_PROVIDER": "vertex",
@@ -295,7 +295,7 @@ class TestLLMProviderFactory:
             from agentic_rag.rag.llm_provider import get_llm_provider, VertexGeminiProvider
             prov = get_llm_provider()
             assert isinstance(prov, VertexGeminiProvider)
-            assert prov.model == "gemini-2.5-flash"
+            assert prov.model == "gemini-2.0-flash"
 
     def test_factory_returns_mock_in_test_mode(self):
         with patch.dict(os.environ, {"RAG_MOCK_MODE": "true", "RAG_PROVIDER": "vertex"}):
@@ -358,7 +358,7 @@ class TestEmbeddingProviderFactory:
 
 
 # ---------------------------------------------------------------------------
-# Graceful degradation  SDK not installed
+# Graceful degradation  SDK not installed
 # ---------------------------------------------------------------------------
 
 class TestVertexSDKMissing:
@@ -376,7 +376,7 @@ class TestVertexSDKMissing:
                 project="test-project",
                 location="us-central1",
             )
-            # Model should be None  safe error returned
+            # Model should be None  safe error returned
             assert prov._genai_model is None
             expected_error = "Vertex AI Configuration Error: google-cloud-aiplatform is not installed. Run: pip install google-cloud-aiplatform>=1.60.0"
             result = prov.chat([{"role": "user", "content": "Hello"}])
