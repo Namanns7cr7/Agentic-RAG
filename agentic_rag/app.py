@@ -1,5 +1,6 @@
 """FastAPI application — LearnMate AI: Agentic Personalized Learning Assistant."""
 
+import logging
 from datetime import datetime
 import os
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -37,6 +38,8 @@ from .learning.doc_learning_agent import DocLearningAgent
 import json
 from pathlib import Path
 from uuid import uuid4
+
+import secrets
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -99,6 +102,10 @@ class AskRequest(BaseModel):
     question: str = Field(..., min_length=2, description="The learning or documentation question")
     doc_id: Optional[str] = Field(default=None, description="Optional document ID scoping")
     mode: str = Field(default="qa", description="Workflow mode: qa, teach, quiz, or interview")
+
+
+# --- Security: Generate a random secret key for session or CSRF protection if needed ---
+SECRET_KEY = secrets.token_urlsafe(32)
 
 
 # ── App Setup ─────────────────────────────────────────────────────
@@ -233,6 +240,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # --- Security: Set secure headers ---
+    @app.middleware("http")
+    async def set_secure_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
     return app
 
 
@@ -260,6 +277,9 @@ def health():
 @app.post("/query", response_model=QueryOut, tags=["rag"])
 def query(payload: QueryIn):
     try:
+        # --- Security: Input validation for question length ---
+        if len(payload.question.strip()) < 2:
+            raise HTTPException(status_code=400, detail="Question too short.")
         out = _services.pipeline().answer(payload.question, top_k=payload.top_k)
         return QueryOut(**out)
     except Exception as e:
@@ -269,6 +289,9 @@ def query(payload: QueryIn):
 @app.post("/load", response_model=LoadOut, tags=["rag"])
 def load(payload: LoadIn):
     try:
+        # --- Security: Validate document list ---
+        if not payload.documents or not isinstance(payload.documents, list):
+            raise HTTPException(status_code=400, detail="No documents provided.")
         pipe = _services.pipeline()
         n = pipe.add_documents(payload.documents)
         return LoadOut(added=n, total=pipe.doc_count)
@@ -330,6 +353,9 @@ def profile_endpoint(user_id: str):
 def flashcards_endpoint(payload: FlashcardRequest):
     """Generate flashcards for a topic."""
     try:
+        # --- Security: Validate flashcard count ---
+        if payload.count < 1 or payload.count > 100:
+            raise HTTPException(status_code=400, detail="Flashcard count must be between 1 and 100.")
         cards = _services.learning_agent().flashcards(
             user_id=payload.user_id,
             topic=payload.topic,
@@ -395,6 +421,9 @@ async def upload_document(
     """Upload a document file, extract text (with OCR for images/scanned PDFs), 
     chunk it, and add to the knowledge base for RAG retrieval."""
     try:
+        # --- Security: Validate file size (max 10MB) ---
+        if file.size is not None and file.size > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Max 10MB allowed.")
         file_bytes = await file.read()
         processor = get_document_processor()
         result = processor.process(
@@ -448,8 +477,23 @@ async def upload_multiple_documents(
     results = []
     processor = get_document_processor()
 
+    # --- Security: Validate number of files (max 10) ---
+    if len(files) > 10:
+        raise HTTPException(status_code=413, detail="Too many files. Max 10 allowed.")
+
     for file in files:
         try:
+            if file.size is not None and file.size > 10 * 1024 * 1024:
+                results.append(DocumentUploadResponse(
+                    doc_id="",
+                    filename=file.filename or "unknown",
+                    file_type="error",
+                    total_chars=0,
+                    num_chunks=0,
+                    chunks_added_to_knowledge_base=0,
+                    preview="Error: File too large. Max 10MB allowed.",
+                ))
+                continue
             file_bytes = await file.read()
             result = processor.process(
                 file_bytes,
@@ -536,6 +580,9 @@ async def upload_document_endpoint(
             status_code=400,
             detail=f"Unsupported file type '{ext}'. Supported: .pdf, .txt, .md, .docx"
         )
+    # --- Security: Validate file size (max 10MB) ---
+    if file.size is not None and file.size > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large. Max 10MB allowed.")
     try:
         file_bytes = await file.read()
         store = _services.doc_store()
@@ -573,6 +620,9 @@ def ask_document_endpoint(payload: AskRequest):
 @app.delete("/documents/{doc_id}", tags=["documents"])
 def delete_document_endpoint(doc_id: str):
     """Delete a document and all its chunks from local storage and vector store."""
+    # --- Security: Validate doc_id ---
+    if not doc_id or len(doc_id) < 8:
+        raise HTTPException(status_code=400, detail="Invalid document ID.")
     store = _services.doc_store()
     pipe = _services.pipeline()
     success = store.delete_document(doc_id, pipe)
