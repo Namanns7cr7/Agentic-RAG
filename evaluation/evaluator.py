@@ -1,11 +1,15 @@
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
 os.environ.setdefault("RAG_MOCK_MODE", "true")
 
 from fastapi.testclient import TestClient
+
+# Patch sys.path to include the project root so agentic_rag is importable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentic_rag.app import app
 
