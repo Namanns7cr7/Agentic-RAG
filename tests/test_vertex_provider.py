@@ -113,10 +113,12 @@ class TestVertexGeminiProvider:
         assert len(result) > 0
 
     def test_chat_returns_safe_error_when_model_is_none(self):
-        from agentic_rag.rag.llm_provider import VertexGeminiProvider, SAFE_LLM_ERROR
+        from agentic_rag.rag.llm_provider import VertexGeminiProvider
         prov = VertexGeminiProvider(model="gemini-2.5-flash", project="", location="us-central1")
+        # The provider returns a configuration error string when model is None
         result = prov.chat([{"role": "user", "content": "Hello"}])
-        assert result == SAFE_LLM_ERROR
+        expected = "Vertex AI Configuration Error: VertexGeminiProvider: GOOGLE_CLOUD_PROJECT is not set in .env. To use Vertex AI, specify GOOGLE_CLOUD_PROJECT and run: 'gcloud auth application-default login'"
+        assert result == expected
 
     def test_chat_strips_think_blocks(self):
         vertexai = sys.modules["vertexai"]
@@ -368,16 +370,17 @@ class TestVertexSDKMissing:
             for key in list(sys.modules):
                 if "llm_provider" in key and "agentic_rag" in key:
                     del sys.modules[key]
-            from agentic_rag.rag.llm_provider import VertexGeminiProvider, SAFE_LLM_ERROR
+            from agentic_rag.rag.llm_provider import VertexGeminiProvider
             prov = VertexGeminiProvider(
                 model="gemini-2.5-flash",
                 project="test-project",
                 location="us-central1",
             )
-            # Model should be None → safe error returned
+            # Model should be None → config error string returned
             assert prov._genai_model is None
             result = prov.chat([{"role": "user", "content": "Hello"}])
-            assert result == SAFE_LLM_ERROR
+            expected = "Vertex AI Configuration Error: google-cloud-aiplatform is not installed. Run: pip install google-cloud-aiplatform>=1.60.0"
+            assert result == expected
 
     def test_vertex_embedding_provider_degrades_when_sdk_missing(self):
         with patch.dict(sys.modules, {"vertexai": None, "vertexai.language_models": None}):
@@ -395,3 +398,4 @@ class TestVertexSDKMissing:
             result = prov.embed_documents(["test"])
             assert len(result) == 1
             assert all(x == 0.0 for x in result[0])
+

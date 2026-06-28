@@ -1,6 +1,7 @@
 """FastAPI application — LearnMate AI: Agentic Personalized Learning Assistant."""
 
 from datetime import datetime
+import re
 import os
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
@@ -39,6 +40,17 @@ from pathlib import Path
 from uuid import uuid4
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+# Security: Validate uploaded filenames to prevent directory traversal and unsafe characters
+def _is_safe_filename(filename: str) -> bool:
+    # Only allow filenames with alphanumerics, underscores, hyphens, dots, and spaces
+    # Disallow any path separators or suspicious patterns
+    if not filename:
+        return False
+    if "/" in filename or "\\" in filename:
+        return False
+    return bool(re.match(r'^[\w\-. ]+$', filename))
 
 
 # ── Request / Response Models (original RAG) ─────────────────────
@@ -396,6 +408,8 @@ async def upload_document(
     chunk it, and add to the knowledge base for RAG retrieval."""
     try:
         file_bytes = await file.read()
+        if not _is_safe_filename(file.filename):
+            raise HTTPException(status_code=400, detail="Unsafe or invalid filename.")
         processor = get_document_processor()
         result = processor.process(
             file_bytes,
@@ -450,6 +464,11 @@ async def upload_multiple_documents(
 
     for file in files:
         try:
+            if not _is_safe_filename(file.filename):
+                results.append(DocumentUploadResponse(
+                    doc_id="", filename=file.filename or "unknown", file_type="error", total_chars=0, num_chunks=0, chunks_added_to_knowledge_base=0, preview="Error: Unsafe or invalid filename."
+                ))
+                continue
             file_bytes = await file.read()
             result = processor.process(
                 file_bytes,
@@ -530,6 +549,8 @@ async def upload_document_endpoint(
     """Upload a document, calculate file hash for deduplication, extract text, 
     generate chunks with overlap, and add to FAISS/persist locally.
     """
+    if not _is_safe_filename(file.filename):
+        raise HTTPException(status_code=400, detail="Unsafe or invalid filename.")
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in (".pdf", ".txt", ".md", ".docx"):
         raise HTTPException(
@@ -595,6 +616,8 @@ async def upload_and_learn(
     try:
         # 1. Process the document
         file_bytes = await file.read()
+        if not _is_safe_filename(file.filename):
+            raise HTTPException(status_code=400, detail="Unsafe or invalid filename.")
         processor = get_document_processor()
         result = processor.process(file_bytes, file.filename or "unknown")
 
